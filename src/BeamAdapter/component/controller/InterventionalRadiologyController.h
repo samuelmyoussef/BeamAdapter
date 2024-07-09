@@ -112,7 +112,7 @@ public:
     void applyAction(sofa::beamadapter::BeamAdapterAction action);
 
     /// Getter to the tools curviline abscisses sorted @sa m_nodeCurvAbs at the current timestep.
-    [[nodiscard]] const type::vector<Real>& getCurrentCurvAbscisses() const { return m_nodeCurvAbs; }
+    [[nodiscard]] const type::vector<Real>& getCurrentCurvAbscisses() const { return d_nodeCurvAbs.getValue(); }
 
 public:
 
@@ -126,7 +126,7 @@ public:
     type::vector< WBeamInterpolation * > m_instrumentsList;
 
     /// For point and line activer
-    type::vector<bool> m_activatedPointsBuf;
+    Data<type::vector<bool>> d_activatedPointsBuf;
 
     /// Interface for interventionalRadiology instruments:
     virtual void applyInterventionalRadiologyController(void);
@@ -154,15 +154,17 @@ public:
     
     
 
-    bool m_FF, m_RW, m_sensored;
+    Data<bool>          d_FF;
+    Data<bool>          d_RW;
+    Data<bool>          d_sensored;
     FixedConstraint<DataTypes> *    m_fixedConstraint;
-    type::vector<int>                     m_droppedInstruments;
-    type::vector<Vec3d>                   m_sensorMotionData;
-    unsigned int                    m_currentSensorData;
-    type::vector<Real>                    m_nodeCurvAbs;
-    type::vector< type::vector<int> >           m_idInstrumentCurvAbsTable;
-    unsigned int                    m_numControlledNodes; // Excluding the nodes that are "dropped"
-    bool                            m_dropCall;
+    Data<type::vector<int>>                     d_droppedInstruments;
+    Data<type::vector<Vec3d>>                   d_sensorMotionData;
+    Data<unsigned int>                    d_currentSensorData;
+    Data<type::vector<Real>>                    d_nodeCurvAbs;
+    Data<type::vector< type::vector<int>>>           d_idInstrumentCurvAbsTable;
+    Data<unsigned int>                    d_numControlledNodes; // Excluding the nodes that are "dropped"
+    Data<bool>                            d_dropCall;
 };
 
 #if !defined(SOFA_PLUGIN_BEAMADAPTER_INTERVENTIONALRADIOCONTROLLER_CPP)

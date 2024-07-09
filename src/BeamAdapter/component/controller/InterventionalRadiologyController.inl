@@ -72,10 +72,29 @@ InterventionalRadiologyController<DataTypes>::InterventionalRadiologyController(
 , d_rigidCurvAbs(initData(&d_rigidCurvAbs, "rigidCurvAbs", "pairs of curv abs for beams we want to rigidify"))
 , d_motionFilename(initData(&d_motionFilename, "motionFilename", "text file that includes tracked motion from optical sensor"))
 , d_indexFirstNode(initData(&d_indexFirstNode, (unsigned int) 0, "indexFirstNode", "first node (should be fixed with restshape)"))
+, d_nodeCurvAbs(initData(&d_nodeCurvAbs, "nodeCurvAbs", "nodeCurvAbs"))
+, d_droppedInstruments(initData(&d_droppedInstruments, "droppedInstruments", "droppedInstruments"))
+, d_sensorMotionData(initData(&d_sensorMotionData, "sensorMotionData", "sensorMotionData"))
+, d_currentSensorData(initData(&d_currentSensorData, (unsigned int) 0, "currentSensorData", "currentSensorData"))
+, d_numControlledNodes(initData(&d_numControlledNodes, (unsigned int) 0, "numControlledNodes", "numControlledNodes"))
+, d_dropCall(initData(&d_dropCall, false, "dropCall", "dropCall"))
+, d_FF(initData(&d_FF, "FF", "FF"))
+, d_RW(initData(&d_RW, "RW", "RW"))
+, d_sensored(initData(&d_sensored, false, "sensored", "sensored"))
+, d_idInstrumentCurvAbsTable(initData(&d_idInstrumentCurvAbsTable, "idInstrumentCurvAbsTable", "idInstrumentCurvAbsTable"))
+, d_activatedPointsBuf(initData(&d_activatedPointsBuf, "activatedPointsBuf", "activatedPointsBuf"))
 {
     m_fixedConstraint = nullptr;
-    m_dropCall = false;
-    m_sensored =false;
+    d_dropCall = false;
+    d_dropCall.setReadOnly(true);
+    d_sensored =false;
+    d_sensored.setReadOnly(true);
+    d_droppedInstruments.setReadOnly(true);
+    d_sensorMotionData.setReadOnly(true);
+    d_currentSensorData.setReadOnly(true);
+    d_numControlledNodes.setReadOnly(true);
+    d_FF.setReadOnly(true);
+    d_RW.setReadOnly(true);
 }
 
 
@@ -114,17 +133,18 @@ void InterventionalRadiologyController<DataTypes>::init()
         msg_info() << m_instrumentsList.size() << " instrument(s) found (WireBeamInterpolation)";
     }
 
+    auto m_activatedPointsBuf = sofa::helper::getWriteOnlyAccessor(d_activatedPointsBuf);
      m_activatedPointsBuf.clear();
 
      if(d_speed.getValue()>0)
      {
-         m_FF=true;
-         m_RW=false;
-         m_sensored = false;
+         d_FF=true;
+         d_RW=false;
+         d_sensored = false;
      }
     if (!d_motionFilename.getValue().empty())
     {
-        m_FF = true; m_sensored = true; m_currentSensorData = 0;
+        d_FF = true; d_sensored = true; d_currentSensorData = 0;
         loadMotionData(d_motionFilename.getValue());
     }
 
@@ -142,6 +162,7 @@ void InterventionalRadiologyController<DataTypes>::init()
         msg_error()<<"No fixedConstraint found.";
 
     /// List of the instrument for which a "DROPPED" was proceeed TODO
+    auto m_droppedInstruments = sofa::helper::getWriteOnlyAccessor(d_droppedInstruments);
     m_droppedInstruments.clear();
 
 
@@ -151,6 +172,8 @@ void InterventionalRadiologyController<DataTypes>::init()
         f_listening.setValue(true);
     }
 
+    auto m_nodeCurvAbs = sofa::helper::getWriteOnlyAccessor(d_nodeCurvAbs);
+    auto m_idInstrumentCurvAbsTable = sofa::helper::getWriteOnlyAccessor(d_idInstrumentCurvAbsTable);
     m_nodeCurvAbs.clear();
     m_idInstrumentCurvAbsTable.clear();
     m_nodeCurvAbs.push_back(0.0);
@@ -169,6 +192,7 @@ void InterventionalRadiologyController<DataTypes>::init()
 template<class DataTypes>
 void InterventionalRadiologyController<DataTypes>::loadMotionData(std::string filename)
 {
+    auto m_sensorMotionData = sofa::helper::getWriteOnlyAccessor(d_sensorMotionData);
     if (!helper::system::DataRepository.findFile(filename))
     {
         msg_error() << "File " << filename << " not found.";
@@ -210,7 +234,7 @@ void InterventionalRadiologyController<DataTypes>::bwdInit()
     WriteAccessor<Data<VecCoord> > x = *this->mState->write(core::VecCoordId::position());
     for(unsigned int i=0; i<x.size(); i++)
         x[i] = d_startingPos.getValue();
-    m_numControlledNodes = x.size();
+    d_numControlledNodes = x.size();
 
     sofa::Size nbrBeam = 0;
     for (unsigned int i = 0; i < m_instrumentsList.size(); i++)
@@ -223,10 +247,10 @@ void InterventionalRadiologyController<DataTypes>::bwdInit()
             nbrBeam += nb;
     }
 
-    if (nbrBeam > m_numControlledNodes)
+    if (nbrBeam > d_numControlledNodes.getValue())
     {
         msg_warning() << "Parameter missmatch: According to the list of controlled instrument controlled. The number of potential beams: "
-            << nbrBeam << " exceed the number of degree of freedom in the MechanicalObject: " << m_numControlledNodes << ". This could lead to unespected behavior.";
+            << nbrBeam << " exceed the number of degree of freedom in the MechanicalObject: " << d_numControlledNodes << ". This could lead to unespected behavior.";
     }
         
     applyInterventionalRadiologyController();
@@ -277,26 +301,26 @@ void InterventionalRadiologyController<DataTypes>::onKeyPressedEvent(KeypressedE
             break;
         case '*':
             {
-                if(m_RW)
+                if(d_RW.getValue())
                 {
-                    m_RW=false;
+                    d_RW=false;
 
                 }
                 else
                 {
-                    m_FF = true;
+                    d_FF = true;
                 }
             }
             break;
         case '/':
             {
-                if(m_FF)
+                if(d_FF.getValue())
                 {
-                    m_FF=false;
+                    d_FF=false;
                 }
                 else
                 {
-                    m_RW = true;
+                    d_RW = true;
                 }
             }
             break;
@@ -308,10 +332,10 @@ template <class DataTypes>
 void InterventionalRadiologyController<DataTypes>::onBeginAnimationStep(const double dt)
 {
     SOFA_UNUSED(dt);
-
     BaseContext* context = getContext();
     auto xInstrTip = sofa::helper::getWriteOnlyAccessor(d_xTip);
-    if(m_FF || m_RW)
+    auto m_sensorMotionData = sofa::helper::getWriteOnlyAccessor(d_sensorMotionData);
+    if(d_FF.getValue() || d_RW.getValue())
     {
         int id = d_controlledInstrument.getValue();
         if (id >= (int)xInstrTip.size())
@@ -319,17 +343,17 @@ void InterventionalRadiologyController<DataTypes>::onBeginAnimationStep(const do
             msg_warning()<<"Controlled Instument num "<<id<<" does not exist (size ="<< xInstrTip.size() <<") use instrument 0 instead";
             id=0;
         }
-        if (m_FF)
+        if (d_FF.getValue())
         {
-            if (!m_sensored)
+            if (!d_sensored.getValue())
                 xInstrTip[id] += d_speed.getValue() * context->getDt();
         else
             {
-                unsigned int newSensorData = m_currentSensorData + 1;
+                unsigned int newSensorData = d_currentSensorData.getValue() + 1;
 
                 while( m_sensorMotionData[newSensorData][0] < context->getTime() )
                 {
-                    m_currentSensorData = newSensorData;
+                    d_currentSensorData = newSensorData;
                     newSensorData++;
                 }
                 if(newSensorData >= m_sensorMotionData.size())
@@ -338,18 +362,18 @@ void InterventionalRadiologyController<DataTypes>::onBeginAnimationStep(const do
                 }
                 else
                 {
-                    xInstrTip[id] += m_sensorMotionData[m_currentSensorData][1];
+                    xInstrTip[id] += m_sensorMotionData[d_currentSensorData.getValue()][1];
                 }
             }
         }
-        if (m_RW)
+        if (d_RW.getValue())
         {
             xInstrTip[id] -= d_speed.getValue()* context->getDt();
             // verif min x :
             if ( xInstrTip[id] < 0.0)
             {
                 xInstrTip[id] = 0.0;
-                m_RW = false;
+                d_RW = false;
             }
         }
     }
@@ -440,7 +464,7 @@ void InterventionalRadiologyController<DataTypes>::applyAction(sofa::beamadapter
     }
     case BeamAdapterAction::DROP_TOOL:
     {
-        m_dropCall = true;
+        d_dropCall = true;
     }
     }
 }
@@ -450,13 +474,16 @@ template <class DataTypes>
 void InterventionalRadiologyController<DataTypes>::processDrop(unsigned int &previousNumControlledNodes,
                                                                unsigned int &segRemove)
 {
+    auto m_nodeCurvAbs = sofa::helper::getWriteOnlyAccessor(d_nodeCurvAbs);
+    auto m_idInstrumentCurvAbsTable = sofa::helper::getWriteOnlyAccessor(d_idInstrumentCurvAbsTable);
+
     int ci = int(d_controlledInstrument.getValue());
     Real xMinOutLocal= 0.0;
 
     Real xBegin=0.0;
 
     // Quelque soit le resultat du process, le drop call est traite ici
-    m_dropCall = false;
+    d_dropCall = false;
 
     // Step1 : quel est l'abscisse curviligne ou l'instrument controllé est seul ?
     for (unsigned int i=0; i<m_nodeCurvAbs.size(); i++)
@@ -494,7 +521,7 @@ void InterventionalRadiologyController<DataTypes>::processDrop(unsigned int &pre
         msg_error()<<"Breaks in two process activated.";
 
         // for now, we simply suppress one more beam !
-        m_numControlledNodes -= (numBeamsNotUnderControlled + 1);
+        d_numControlledNodes = d_numControlledNodes.getValue() - (numBeamsNotUnderControlled + 1);
 
         auto xEnds = sofa::helper::getWriteOnlyAccessor(d_xTip);
         xEnds[ci] =  xBegin +  xBreak;
@@ -509,13 +536,13 @@ void InterventionalRadiologyController<DataTypes>::processDrop(unsigned int &pre
     {
         if( m_nodeCurvAbs[i] > (xBegin +  xBreak + eps) )
         {
-            type::removeIndex(m_nodeCurvAbs,i);
-            type::removeIndex(m_idInstrumentCurvAbsTable, i);
+            type::removeIndex(m_nodeCurvAbs.wref(),i);
+            type::removeIndex(m_idInstrumentCurvAbsTable.wref(), i);
             i--;
         }
     }
     segRemove = 1;
-    previousNumControlledNodes =m_numControlledNodes;
+    previousNumControlledNodes =d_numControlledNodes.getValue();
 }
 
 
@@ -623,6 +650,9 @@ void InterventionalRadiologyController<DataTypes>::interventionalRadiologyCollis
         msg_error()<<"The list do not have the same size";
         return;
     }
+    auto m_nodeCurvAbs = sofa::helper::getWriteOnlyAccessor(d_nodeCurvAbs);
+    auto m_idInstrumentCurvAbsTable = sofa::helper::getWriteOnlyAccessor(d_idInstrumentCurvAbsTable);
+    auto m_activatedPointsBuf = sofa::helper::getWriteOnlyAccessor(d_activatedPointsBuf);
 
     // we enter the point from the tip to the end of the combined instrument
     // x_abs_curv provides the value of the curv abs along the combined instrument
@@ -782,10 +812,10 @@ void InterventionalRadiologyController<DataTypes>::applyInterventionalRadiologyC
     type::vector<Real> newCurvAbs;
 
     /// In case of drop:
-    unsigned int previousNumControlledNodes = m_numControlledNodes;
+    unsigned int previousNumControlledNodes = d_numControlledNodes.getValue();
     unsigned int seg_remove = 0;
 
-    if (m_dropCall)
+    if (d_dropCall.getValue())
         processDrop(previousNumControlledNodes, seg_remove);
 
     /// STEP 1
@@ -847,6 +877,9 @@ void InterventionalRadiologyController<DataTypes>::applyInterventionalRadiologyC
     auto x = sofa::helper::getWriteOnlyAccessor(*datax);
     VecCoord xbuf = x.ref();
 
+    auto m_nodeCurvAbs = sofa::helper::getWriteOnlyAccessor(d_nodeCurvAbs);
+    auto m_idInstrumentCurvAbsTable = sofa::helper::getWriteOnlyAccessor(d_idInstrumentCurvAbsTable);
+
     const sofa::Size nbrCurvAbs = newCurvAbs.size(); // number of simulated nodes
     const sofa::Size prev_nbrCurvAbs = m_nodeCurvAbs.size(); // previous number of simulated nodes;
     const Real prev_maxCurvAbs = m_nodeCurvAbs.back();
@@ -855,7 +888,7 @@ void InterventionalRadiologyController<DataTypes>::applyInterventionalRadiologyC
     type::vector<Real> modifiedCurvAbs;
     totalLengthIsChanging(newCurvAbs, modifiedCurvAbs, idInstrumentTable);
 
-    sofa::Size nbrUnactiveNode = m_numControlledNodes - nbrCurvAbs; // m_numControlledNodes == nbr Dof | nbr of CurvAbs > 0
+    sofa::Size nbrUnactiveNode = d_numControlledNodes.getValue() - nbrCurvAbs; // d_numControlledNodes == nbr Dof | nbr of CurvAbs > 0
     sofa::Size prev_nbrUnactiveNode = previousNumControlledNodes - prev_nbrCurvAbs;
 
     for (sofa::Index xId = 0; xId < nbrCurvAbs; xId++)
@@ -935,7 +968,7 @@ void InterventionalRadiologyController<DataTypes>::applyInterventionalRadiologyC
     /// Assign the beams
     helper::AdvancedTimer::stepBegin("step4");
     sofa::Size nbrBeam = newCurvAbs.size() - 1; // number of simulated beams
-    unsigned int numEdges= m_numControlledNodes-1;
+    unsigned int numEdges= d_numControlledNodes.getValue()-1;
 
     // verify that there is a sufficient number of Edge in the topology : TODO if not, modify topo !
     if (numEdges<nbrBeam)
@@ -977,7 +1010,7 @@ void InterventionalRadiologyController<DataTypes>::applyInterventionalRadiologyC
     /// STEP 5
     /// Fix the not simulated nodes
     helper::AdvancedTimer::stepBegin("step5");
-    unsigned int firstSimulatedNode = m_numControlledNodes - nbrBeam;
+    unsigned int firstSimulatedNode = d_numControlledNodes.getValue() - nbrBeam;
 
     //1. Fix the nodes (beginning of the instruments) that are not "out"
     fixFirstNodesWithUntil(firstSimulatedNode);
@@ -1025,8 +1058,8 @@ void InterventionalRadiologyController<DataTypes>::applyInterventionalRadiologyC
     /// Activate Beam List for collision of each instrument
     activateBeamListForCollision(newCurvAbs,idInstrumentTable);
 
-    m_nodeCurvAbs = newCurvAbs;
-    m_idInstrumentCurvAbsTable = idInstrumentTable;
+    m_nodeCurvAbs.wref() = newCurvAbs;
+    m_idInstrumentCurvAbsTable.wref() = idInstrumentTable;
     helper::AdvancedTimer::stepEnd("step5");
 }
 
@@ -1041,6 +1074,7 @@ void InterventionalRadiologyController<DataTypes>::totalLengthIsChanging(const t
     // we initialize some points at a x_curv ref pos without the motion (computed by DLength)
     // due to the elasticity of the beam, the point will then naturally go the position that reespects the newNodeCurvAbs
 
+    auto m_nodeCurvAbs = sofa::helper::getWriteOnlyAccessor(d_nodeCurvAbs);
     Real dLength = newNodeCurvAbs.back() - m_nodeCurvAbs.back();
     modifiedNodeCurvAbs = newNodeCurvAbs;
 
@@ -1141,7 +1175,7 @@ void InterventionalRadiologyController<DataTypes>::getInstrumentList(type::vecto
 template <class DataTypes>
 const type::vector< type::vector<int> >& InterventionalRadiologyController<DataTypes>::get_id_instrument_curvAbs_table() const
 {
-    return m_idInstrumentCurvAbsTable;
+    return d_idInstrumentCurvAbsTable.getValue();
 }
 
 template <class DataTypes>
